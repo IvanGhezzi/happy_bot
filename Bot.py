@@ -1,6 +1,5 @@
 import os
 import logging
-import asyncio
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -71,7 +70,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Произошла ошибка при обработке сообщения.")
 
 # Запуск бота
-async def main():
+def main():
     """Основная функция запуска бота"""
     try:
         # Инициализируем Google Sheets
@@ -91,12 +90,12 @@ async def main():
         
         logger.info("Бот запущен и готов к работе")
         
-        # Запускаем polling
-        await app.run_polling(drop_pending_updates=True)
+        # Запускаем polling (синхронный режим для серверной среды)
+        app.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске бота: {e}")
         raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
