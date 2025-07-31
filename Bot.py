@@ -162,55 +162,53 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def periodic_task(application: Application):
     global is_waiting_response, already_sent
     
-    while True:
-        try:
-            now = datetime.datetime.now()
-            chat_id = user_data.get("chat_id")
-            
-            debug(f"Проверка времени: {now.strftime('%H:%M:%S')} | chat_id: {chat_id} | waiting: {is_waiting_response}")
-            
-            if not is_working_time():
-                debug(f"Вне рабочего времени — бот молчит. {now.strftime('%H:%M:%S')}")
-            elif chat_id and now.minute in [0, 30]:
-                # Создаем уникальный ключ для этого временного слота
-                key = now.strftime('%Y-%m-%d %H:') + ('00' if now.minute < 30 else '30')
-                
-                if key not in already_sent and not is_waiting_response:
-                    already_sent.add(key)
-                    is_waiting_response = True
-                    
-                    debug(f"Отправляем сообщение в интервал {key}")
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text="Чем ты сейчас занимаешься?"
-                    )
-                elif is_waiting_response:
-                    debug("Ожидаем предыдущий ответ — не шлём новое сообщение")
-                elif key in already_sent:
-                    debug(f"Сообщение для {key} уже было отправлено")
-            
-            # Очищаем старые ключи (старше 2 часов)
-            current_time = now.timestamp()
-            keys_to_remove = []
-            for key in already_sent:
-                try:
-                    key_time = datetime.datetime.strptime(key, '%Y-%m-%d %H:%M').timestamp()
-                    if current_time - key_time > 7200:  # 2 часа
-                        keys_to_remove.append(key)
-                except:
-                    pass
-            
-            for key in keys_to_remove:
-                already_sent.remove(key)
-                
-        except Exception as e:
-            logger.error(f"Ошибка в periodic_task: {e}")
+    try:
+        now = datetime.datetime.now()
+        chat_id = user_data.get("chat_id")
         
-        await asyncio.sleep(30)  # Проверяем каждые 30 секунд
+        debug(f"Проверка времени: {now.strftime('%H:%M:%S')} | chat_id: {chat_id} | waiting: {is_waiting_response}")
+        
+        if not is_working_time():
+            debug(f"Вне рабочего времени — бот молчит. {now.strftime('%H:%M:%S')}")
+        elif chat_id and now.minute in [0, 30]:
+            # Создаем уникальный ключ для этого временного слота
+            key = now.strftime('%Y-%m-%d %H:') + ('00' if now.minute < 30 else '30')
+            
+            if key not in already_sent and not is_waiting_response:
+                already_sent.add(key)
+                is_waiting_response = True
+                
+                debug(f"Отправляем сообщение в интервал {key}")
+                await application.bot.send_message(
+                    chat_id=chat_id,
+                    text="Чем ты сейчас занимаешься?"
+                )
+            elif is_waiting_response:
+                debug("Ожидаем предыдущий ответ — не шлём новое сообщение")
+            elif key in already_sent:
+                debug(f"Сообщение для {key} уже было отправлено")
+        
+        # Очищаем старые ключи (старше 2 часов)
+        current_time = now.timestamp()
+        keys_to_remove = []
+        for key in already_sent:
+            try:
+                key_time = datetime.datetime.strptime(key, '%Y-%m-%d %H:%M').timestamp()
+                if current_time - key_time > 7200:  # 2 часа
+                    keys_to_remove.append(key)
+            except:
+                pass
+        
+        for key in keys_to_remove:
+            already_sent.remove(key)
+            
+    except Exception as e:
+        logger.error(f"Ошибка в periodic_task: {e}")
 
 # Основной запуск
-async def run():
-    global user_data
+def main():
+    if not TELEGRAM_TOKEN:
+        raise ValueError("TELEGRAM_TOKEN не найден в переменных окружения")
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
@@ -228,20 +226,19 @@ async def run():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(conv_handler)
     
-    # Запускаем фоновую задачу
-    asyncio.create_task(periodic_task(application))
+    # Запускаем фоновую задачу через job_queue
+    application.job_queue.run_repeating(
+        lambda context: asyncio.create_task(periodic_task(application)),
+        interval=30,
+        first=5
+    )
     
     logger.info("Бот запущен и готов к работе")
     logger.info("Рабочее время: 05:00-02:00")
     logger.info("Интервалы опроса: каждые 30 минут (:00 и :30)")
     
-    await application.run_polling(drop_pending_updates=True)
-
-def main():
-    if not TELEGRAM_TOKEN:
-        raise ValueError("TELEGRAM_TOKEN не найден в переменных окружения")
-    
-    asyncio.run(run())
+    # Синхронный запуск для совместимости с Render
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
