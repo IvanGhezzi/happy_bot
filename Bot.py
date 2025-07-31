@@ -1,38 +1,51 @@
 import os
-import asyncio
-import datetime
 import logging
-
+import asyncio
 import gspread
-import nest_asyncio
 from oauth2client.service_account import ServiceAccountCredentials
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-nest_asyncio.apply()
+# Логирование
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+# Подключение к Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+google_credentials = os.environ["GOOGLE_CREDENTIALS"]
+with open("google_credentials.json", "w") as f:
+    f.write(google_credentials)
 
-# Авторизация Google Sheets
-scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-google_credentials = os.environ.get("GOOGLE_CREDENTIALS")
-credentials = ServiceAccountCredentials.from_json_keyfile_dict(eval(google_credentials), scope)
-gc = gspread.authorize(credentials)
-sheet = gc.open("HappierBot").sheet1
+creds = ServiceAccountCredentials.from_json_keyfile_name("google_credentials.json", scope)
+client = gspread.authorize(creds)
+sheet = client.open("HappierBot").sheet1
+
+# Обработчик команд
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Привет! Я работаю.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sheet.append_row([now, str(update.message.chat.id), text])
-    await update.message.reply_text("Принято!")
+    user = update.effective_user
+    message = update.message.text
+    sheet.append_row([user.username or user.first_name, message])
+    await update.message.reply_text("Записал в таблицу!")
 
-async def run_bot():
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    await application.run_polling()
+# Запуск бота
+async def main():
+    token = os.environ["TELEGRAM_TOKEN"]
+    app = ApplicationBuilder().token(token).build()
 
-def main():
-    asyncio.run(run_bot())
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-if __name__ == '__main__':
-    main()
+    logger.info("Бот запущен")
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
